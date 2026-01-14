@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pos-distance-app:
+    build: .
+    container_name: pos-distance-app
+    ports:
+      - "9595:9595"
+    volumes:
+      # Mount the current directory to allow file uploads/downloads
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

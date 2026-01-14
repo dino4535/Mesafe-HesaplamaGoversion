@@ -358,16 +358,17 @@ func processJob(job *Job, inputPath string, mode string, meters float64) {
 	elapsed := time.Since(start)
 	job.Log(fmt.Sprintf("Hesaplama tamamlandı. Süre: %s", elapsed))
 
-	// Write Output
-	outputPath := strings.Replace(inputPath, ".xlsx", fmt.Sprintf("_%s.xlsx", mode), 1)
+	// Write Output - Use CSV for speed
+	outputPath := strings.Replace(inputPath, ".xlsx", fmt.Sprintf("_%s.csv", mode), 1)
 	outputPath = strings.Replace(outputPath, "uploads", "output", 1) // Move to output folder
-	
-	job.Log("Sonuç dosyası yazılıyor...")
-	err = excel.WriteResult(outputPath, results, "Sonuclar")
+
+	job.Log("Sonuç dosyası yazılıyor (CSV)...")
+	err = excel.WriteResultCSV(outputPath, results)
 	if err != nil {
 		failJob(job, fmt.Sprintf("Yazma hatası: %v", err))
 		return
 	}
+	job.Log("Dosya yazma tamamlandı.")
 
 	job.Mutex.Lock()
 	job.Status = StatusDone

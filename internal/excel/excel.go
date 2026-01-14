@@ -1,7 +1,9 @@
 package excel
 
 import (
+	"encoding/csv"
 	"fmt"
+	"os"
 	"pos-distance/internal/models"
 	"strconv"
 	"strings"
@@ -63,13 +65,60 @@ func ReadSheet(f *excelize.File, sheetName string) ([]models.Customer, error) {
 	return customers, nil
 }
 
+// WriteResultCSV writes results to a CSV file (FAST)
+func WriteResultCSV(path string, data []models.ResultRow) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Write UTF-8 BOM for Excel compatibility
+	file.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	writer := csv.NewWriter(file)
+	writer.Comma = ';' // Use semicolon for Turkish Excel compatibility
+	defer writer.Flush()
+
+	// Header
+	header := []string{
+		"KACC Musteri No", "KACC Musteri Adi", "KACC Lat", "KACC Lon",
+		"POS Musteri No", "POS Musteri Adi", "POS Lat", "POS Lon",
+		"Mesafe (m)",
+	}
+	if err := writer.Write(header); err != nil {
+		return err
+	}
+
+	// Data
+	for _, r := range data {
+		row := []string{
+			r.KaccID,
+			r.KaccName,
+			fmt.Sprintf("%.6f", r.KaccLat),
+			fmt.Sprintf("%.6f", r.KaccLon),
+			r.PosID,
+			r.PosName,
+			fmt.Sprintf("%.6f", r.PosLat),
+			fmt.Sprintf("%.6f", r.PosLon),
+			strconv.Itoa(r.Distance),
+		}
+		if err := writer.Write(row); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// WriteResult writes results to an Excel file (slower but native xlsx)
 func WriteResult(path string, data []models.ResultRow, sheetName string) error {
 	f := excelize.NewFile()
 	index, err := f.NewSheet(sheetName)
 	if err != nil {
 		return err
 	}
-	
+
 	// Use Stream Writer for performance
 	sw, err := f.NewStreamWriter(sheetName)
 	if err != nil {
@@ -82,7 +131,7 @@ func WriteResult(path string, data []models.ResultRow, sheetName string) error {
 		"POS Musteri No", "POS Musteri Adı", "POS Lat", "POS Lon",
 		"Mesafe (m)",
 	}
-	
+
 	if err := sw.SetRow("A1", headers); err != nil {
 		return err
 	}
@@ -110,6 +159,6 @@ func WriteResult(path string, data []models.ResultRow, sheetName string) error {
 	if sheetName != "Sheet1" {
 		f.DeleteSheet("Sheet1")
 	}
-	
+
 	return f.SaveAs(path)
 }

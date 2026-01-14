@@ -6,6 +6,7 @@ import (
 	"pos-distance/internal/models"
 	"runtime"
 	"sync"
+	"sync/atomic"
 )
 
 type ProgressCallback func(current, total int, msg string)
@@ -18,8 +19,7 @@ func ComputeNearest(kaccList []models.Customer, posList []models.Customer, onPro
 
 	total := len(kaccList)
 	results := make([]models.ResultRow, total)
-	
-	// Determine chunk size for parallel processing
+
 	numCPU := runtime.NumCPU()
 	if numCPU < 1 {
 		numCPU = 1
@@ -27,10 +27,9 @@ func ComputeNearest(kaccList []models.Customer, posList []models.Customer, onPro
 	chunkSize := (total + numCPU - 1) / numCPU
 
 	var wg sync.WaitGroup
-	var progressMutex sync.Mutex
-	processedCount := 0
+	var processedCount int64 = 0
 
-	logger(fmt.Sprintf("Starting parallel processing with %d CPUs", numCPU))
+	logger(fmt.Sprintf("Starting parallel processing with %d CPUs, %d customers, %d POS", numCPU, len(kaccList), len(posList)))
 
 	for i := 0; i < numCPU; i++ {
 		start := i * chunkSize
@@ -45,24 +44,22 @@ func ComputeNearest(kaccList []models.Customer, posList []models.Customer, onPro
 		wg.Add(1)
 		go func(s, e int) {
 			defer wg.Done()
-			localProcessed := 0
-			
+
 			for idx := s; idx < e; idx++ {
 				source := kaccList[idx]
-				var nearest models.Customer
+				var nearestIdx int = 0
 				minDist := math.MaxFloat64
 
-				// Optimization: We still scan all POS for each KACC (O(N*M))
-				// But we do it in parallel. KD-Tree would be O(N*logM) but pure Go array scan is very fast for <100k
-				// and easier to implement without external heavy geo libs.
-				for _, p := range posList {
+				// Find the nearest POS for this customer
+				for pIdx, p := range posList {
 					d := Haversine(source.Loc.Lat, source.Loc.Lon, p.Loc.Lat, p.Loc.Lon)
 					if d < minDist {
 						minDist = d
-						nearest = p
+						nearestIdx = pIdx
 					}
 				}
 
+				nearest := posList[nearestIdx]
 				results[idx] = models.ResultRow{
 					KaccID:   source.ID,
 					KaccName: source.Name,
@@ -75,47 +72,29 @@ func ComputeNearest(kaccList []models.Customer, posList []models.Customer, onPro
 					Distance: int(math.Round(minDist)),
 				}
 
-				localProcessed++
-				if localProcessed%100 == 0 || idx == e-1 {
-					progressMutex.Lock()
-					processedCount += localProcessed
-					// Callback
+				// Atomic increment for progress
+				count := atomic.AddInt64(&processedCount, 1)
+				if count%500 == 0 {
 					if onProgress != nil {
-						onProgress(processedCount, total, "")
+						onProgress(int(count), total, "")
 					}
-					processedCount -= localProcessed // tricky: we updated the total, don't double count
-					// Wait, the progress logic above is slightly flawed for concurrency updates
-					// Better: Just add delta to a shared counter
-					progressMutex.Unlock()
-					localProcessed = 0
 				}
 			}
-			// Final update for remainder
-			if localProcessed > 0 {
-				progressMutex.Lock()
-				processedCount += localProcessed
-				if onProgress != nil {
-					onProgress(processedCount, total, "")
-				}
-				progressMutex.Unlock()
-			}
-
 		}(start, end)
 	}
 
-	// Progress ticker to avoid spamming the channel if needed, 
-	// but the mutex approach above is fine for < 50 updates/sec.
-	
 	wg.Wait()
+	
+	// Final progress update
+	if onProgress != nil {
+		onProgress(total, total, "")
+	}
+	
 	logger("Calculation completed.")
 	return results, nil
 }
 
 func ComputeRadius(kaccList []models.Customer, posList []models.Customer, radiusMeters float64, onProgress ProgressCallback, logger LoggerCallback) ([]models.ResultRow, error) {
-	// For radius, one KACC can match MULTIPLE POS.
-	// So we can't pre-allocate the results array size exactly.
-	// We will use a channel to collect results.
-
 	numCPU := runtime.NumCPU()
 	total := len(kaccList)
 	chunkSize := (total + numCPU - 1) / numCPU
@@ -125,11 +104,6 @@ func ComputeRadius(kaccList []models.Customer, posList []models.Customer, radius
 
 	logger(fmt.Sprintf("Starting Radius search (%.0fm) with %d CPUs", radiusMeters, numCPU))
 
-	// Pre-calculate degree deltas for "Bounding Box" check to speed up
-	// 1 deg Lat ~= 111km
-	// 1 deg Lon ~= 111km * cos(lat)
-	// This is an optimization to avoid expensive Haversine calls for far points.
-	
 	for i := 0; i < numCPU; i++ {
 		start := i * chunkSize
 		end := start + chunkSize
@@ -139,17 +113,15 @@ func ComputeRadius(kaccList []models.Customer, posList []models.Customer, radius
 		if end > total {
 			end = total
 		}
-		
+
 		wg.Add(1)
 		go func(s, e int) {
 			defer wg.Done()
 			var localRes []models.ResultRow
-			
+
 			for idx := s; idx < e; idx++ {
 				src := kaccList[idx]
-				
-				// Optional: Bounding box check here could save time
-				
+
 				for _, p := range posList {
 					d := Haversine(src.Loc.Lat, src.Loc.Lon, p.Loc.Lat, p.Loc.Lon)
 					if d <= radiusMeters {
@@ -166,12 +138,6 @@ func ComputeRadius(kaccList []models.Customer, posList []models.Customer, radius
 						})
 					}
 				}
-				
-				if (idx-s)%100 == 0 && onProgress != nil {
-					// Reporting progress from inside goroutines is tricky
-					// We'll skip complex synchronization for now and just trust the main waiter
-					// Or use an atomic counter.
-				}
 			}
 			resultChan <- localRes
 		}(start, end)
@@ -184,15 +150,15 @@ func ComputeRadius(kaccList []models.Customer, posList []models.Customer, radius
 
 	var allResults []models.ResultRow
 	processedChunks := 0
-	
+
 	for resChunk := range resultChan {
 		allResults = append(allResults, resChunk...)
 		processedChunks++
 		if onProgress != nil {
-			// Rough progress estimation
 			onProgress(processedChunks*chunkSize, total, "")
 		}
 	}
-	
+
+	logger("Radius calculation completed.")
 	return allResults, nil
 }

@@ -2,15 +2,12 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"pos-distance/internal/calculator"
 	"pos-distance/internal/excel"
 	"pos-distance/internal/models"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"

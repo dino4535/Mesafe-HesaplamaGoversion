@@ -70,34 +70,39 @@ func WriteResult(path string, data []models.ResultRow, sheetName string) error {
 		return err
 	}
 	
+	// Use Stream Writer for performance
+	sw, err := f.NewStreamWriter(sheetName)
+	if err != nil {
+		return err
+	}
+
 	// Set header
-	headers := []string{
+	headers := []interface{}{
 		"KACC Musteri No", "KACC Musteri Adı", "KACC Lat", "KACC Lon",
 		"POS Musteri No", "POS Musteri Adı", "POS Lat", "POS Lon",
 		"Mesafe (m)",
 	}
 	
-	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		f.SetCellValue(sheetName, cell, h)
+	if err := sw.SetRow("A1", headers); err != nil {
+		return err
 	}
 
-	// Write data
-	// Using stream writer is better for large files, but SetCellValue is easier for logic.
-	// For < 50k rows, ordinary write is okay. For 1M rows we need stream.
-	// Let's use standard write for simplicity, can upgrade to stream if needed.
-	
+	// Write data in chunks
 	for i, r := range data {
 		rowNum := i + 2
-		f.SetCellValue(sheetName, fmt.Sprintf("A%d", rowNum), r.KaccID)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", rowNum), r.KaccName)
-		f.SetCellValue(sheetName, fmt.Sprintf("C%d", rowNum), r.KaccLat)
-		f.SetCellValue(sheetName, fmt.Sprintf("D%d", rowNum), r.KaccLon)
-		f.SetCellValue(sheetName, fmt.Sprintf("E%d", rowNum), r.PosID)
-		f.SetCellValue(sheetName, fmt.Sprintf("F%d", rowNum), r.PosName)
-		f.SetCellValue(sheetName, fmt.Sprintf("G%d", rowNum), r.PosLat)
-		f.SetCellValue(sheetName, fmt.Sprintf("H%d", rowNum), r.PosLon)
-		f.SetCellValue(sheetName, fmt.Sprintf("I%d", rowNum), r.Distance)
+		cell, _ := excelize.CoordinatesToCellName(1, rowNum)
+		row := []interface{}{
+			r.KaccID, r.KaccName, r.KaccLat, r.KaccLon,
+			r.PosID, r.PosName, r.PosLat, r.PosLon,
+			r.Distance,
+		}
+		if err := sw.SetRow(cell, row); err != nil {
+			return err
+		}
+	}
+
+	if err := sw.Flush(); err != nil {
+		return err
 	}
 
 	f.SetActiveSheet(index)

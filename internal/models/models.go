@@ -9,8 +9,7 @@ type Customer struct {
 	ID   string
 	Name string
 	Loc  Coordinate
-	// Original row data could be stored here if needed, 
-	// but for this app we just need ID and Name to report.
+	RowIndex int
 }
 
 type ResultRow struct {

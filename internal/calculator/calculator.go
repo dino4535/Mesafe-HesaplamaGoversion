@@ -6,7 +6,6 @@ import (
 	"pos-distance/internal/models"
 	"runtime"
 	"sync"
-	"time"
 )
 
 type ProgressCallback func(current, total int, msg string)

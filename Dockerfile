@@ -1,42 +1,24 @@
-# Build Stage
-FROM golang:1.23-alpine AS builder
+FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install git required for fetching dependencies
-RUN apk add --no-cache git
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy source code
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the application code
 COPY . .
 
-# Run tidy to fetch dependencies and generate go.sum
-# Since we don't have go.sum locally, we generate it here after copying source
-RUN go mod tidy
-
-# Build the binary
-# CGO_ENABLED=0 creates a statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o pos-server main.go
-
-# Runtime Stage
-FROM alpine:latest
-
-WORKDIR /app
-
-# Install basic certificates
-RUN apk --no-cache add ca-certificates tzdata
-
-# Copy binary from builder
-COPY --from=builder /app/pos-server .
-
-# Copy templates and static files
-# We accept that templates are part of the deployment
-COPY templates/ ./templates/
-
-# Make sure upload/output directories exist
-RUN mkdir -p uploads output
-
-# Expose port
+# Expose the port
 EXPOSE 9595
 
-# Run
-CMD ["./pos-server"]
+# Set the working directory to webapp and run the application
+WORKDIR /app/webapp
+
+# Run the application
+CMD ["python", "app.py"]

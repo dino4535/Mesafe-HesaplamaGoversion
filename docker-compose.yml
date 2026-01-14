@@ -3,16 +3,13 @@ version: '3.8'
 services:
   pos-distance-app:
     build: .
-    container_name: pos-distance-go
+    container_name: pos-distance-app
     ports:
       - "9595:9595"
     volumes:
-      # Mount uploads and output for persistence/access
+      # Mount the current directory to allow file uploads/downloads
       - ./uploads:/app/uploads
       - ./output:/app/output
-      # Optional: Mount templates if you want to edit HTML without rebuild
-      # - ./templates:/app/templates
     restart: unless-stopped
     environment:
-      - GIN_MODE=release
-      - PORT=9595
+      - PYTHONUNBUFFERED=1

@@ -1,8 +1,0 @@
-module pos-distance
-
-go 1.21
-
-require (
-	github.com/gin-gonic/gin v1.9.1
-	github.com/xuri/excelize/v2 v2.8.0
-)

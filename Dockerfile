@@ -6,15 +6,12 @@ WORKDIR /app
 # Install git required for fetching dependencies
 RUN apk add --no-cache git
 
-# Copy go mod definitions
-COPY go.mod ./
-
-# Run tidy to fetch dependencies and generate go.sum
-# In a real pipeline you'd have go.sum committed, but here we generate it.
-RUN go mod tidy
-
 # Copy source code
 COPY . .
+
+# Run tidy to fetch dependencies and generate go.sum
+# Since we don't have go.sum locally, we generate it here after copying source
+RUN go mod tidy
 
 # Build the binary
 # CGO_ENABLED=0 creates a statically linked binary

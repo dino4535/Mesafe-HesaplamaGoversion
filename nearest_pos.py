@@ -187,12 +187,36 @@ def compute_nearest(
         if logger:
             logger("En yakın konumlar aranıyor...")
         
-        # En yakın 1 komşuyu bul
-        distances_rad, indices = tree.query(kacc_coords_rad, k=1)
+        # Batch halinde işle ve ilerleme göster
+        total_kacc = len(k_lat)
+        batch_size = 500
+        all_distances = []
+        all_indices = []
+        
+        for start_idx in range(0, total_kacc, batch_size):
+            end_idx = min(start_idx + batch_size, total_kacc)
+            batch_coords = kacc_coords_rad[start_idx:end_idx]
+            
+            # Bu batch için en yakın komşuyu bul
+            batch_dist, batch_idx = tree.query(batch_coords, k=1)
+            all_distances.append(batch_dist)
+            all_indices.append(batch_idx)
+            
+            # İlerleme logla
+            if logger:
+                pct = (end_idx / total_kacc) * 100
+                logger(f"İşlenen KACC: {end_idx} / {total_kacc} (%{pct:.1f})")
+        
+        # Sonuçları birleştir
+        distances_rad = np.vstack(all_distances)
+        indices = np.vstack(all_indices)
         
         # Radyan mesafeyi metreye çevir (Dünya yarıçapı: 6371000 m)
         min_dist = distances_rad.flatten() * 6371000.0
         argmin = indices.flatten()
+        
+        if logger:
+            logger("Tüm KACC bayileri işlendi ✓")
     else:
         # Fallback: Orijinal matris yöntemi
         if logger:

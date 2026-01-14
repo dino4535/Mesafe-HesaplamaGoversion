@@ -104,6 +104,11 @@ func main() {
 
 	// Setup Sessions
 	store := cookie.NewStore([]byte(SecretKey))
+	store.Options(sessions.Options{
+		Path:     "/",
+		MaxAge:   3600 * 8,
+		HttpOnly: true,
+	})
 	r.Use(sessions.Sessions("mysession", store))
 
 	// Load Templates
@@ -129,13 +134,21 @@ func main() {
 	r.POST("/login", func(c *gin.Context) {
 		username := c.PostForm("username")
 		password := c.PostForm("password")
+		
+		fmt.Printf("Login attempt: User='%s' Pass='%s'\n", username, password)
 
 		if username == LoginUser && password == LoginPass {
 			session := sessions.Default(c)
 			session.Set("user", username)
-			session.Save()
+			if err := session.Save(); err != nil {
+				fmt.Printf("Session save error: %v\n", err)
+				c.HTML(http.StatusOK, "login.html", gin.H{"Error": "Oturum kaydedilemedi"})
+				return
+			}
+			fmt.Println("Login successful, redirecting...")
 			c.Redirect(http.StatusFound, "/")
 		} else {
+			fmt.Println("Login failed: invalid credentials")
 			c.HTML(http.StatusOK, "login.html", gin.H{
 				"Error": "Hatalı kullanıcı adı veya şifre",
 			})
